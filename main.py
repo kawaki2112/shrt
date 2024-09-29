@@ -5,6 +5,7 @@ import pandas as pd
 import os
 import time
 import io
+import zipfile
 
 # Add these lines at the beginning of the script
 if 'timer_count' not in st.session_state:
@@ -20,6 +21,7 @@ password_column = None
 uploaded_file = None
 clue_column = None  # Add this line
 image_column = None  # Add this line
+picture_folder = None  # Add this line
 
 def add_bg_from_image(image_file):
     with open(image_file, "rb") as file:
@@ -45,7 +47,8 @@ def handle_sidebar_uploads(sidebar_password):
         'user_number_column': None,
         'password_column': None,
         'clue_column': None,
-        'image_column': None  # Add this line
+        'image_column': None,
+        'image_zip': None
     }
 
     entered_password = st.sidebar.text_input("Enter password to access sidebar", type="password")
@@ -66,12 +69,31 @@ def handle_sidebar_uploads(sidebar_password):
                 changes['user_number_column'] = st.selectbox("Select the column for User Number", df.columns)
                 changes['password_column'] = st.selectbox("Select the column for Password", df.columns)
                 changes['clue_column'] = st.selectbox("Select the column for Clue", df.columns)
-                changes['image_column'] = st.selectbox("Select the column for Image Path", df.columns)  # Add this line
+                changes['image_column'] = st.selectbox("Select the column for Image Path", df.columns)
+
+        with st.sidebar.expander("Upload Pictures Folder", expanded=False):
+            image_zip = st.file_uploader("Upload a ZIP file containing all images", type="zip")
+            if image_zip is not None:
+                changes['image_zip'] = image_zip
+
     else:
         if len(entered_password) > 0:
             st.sidebar.error("Incorrect password. Please enter the correct password to access the sidebar.")
 
-    return changes
+    return changes, entered_password == sidebar_password
+
+# Add this function to extract images from the ZIP file
+def extract_images_from_zip(zip_file):
+    image_dict = {}
+    with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+        for file_name in zip_ref.namelist():
+            if file_name.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
+                with zip_ref.open(file_name) as file:
+                    image_data = file.read()
+                    # Use the filename without extension as the key
+                    key = os.path.splitext(os.path.basename(file_name))[0]
+                    image_dict[key] = image_data
+    return image_dict
 
 # Modify the countdown_timer function
 def countdown_timer(duration):
@@ -125,39 +147,38 @@ if st.session_state.eliminated:
     show_elimination_message()
 else:
     sidebar_password = "22shrt2k24"
-    uploaded_file = None
-    excel_file = None
-    df = None
-    user_number_column = None
-    password_column = None
-    clue_column = None
-    image_column = None
+
+    # Initialize session state for file storage
+    if 'uploaded_file' not in st.session_state:
+        st.session_state.uploaded_file = None
+    if 'excel_file' not in st.session_state:
+        st.session_state.excel_file = None
+    if 'image_dict' not in st.session_state:
+        st.session_state.image_dict = {}
 
     # Call the function to handle sidebar uploads
-    sidebar_changes = handle_sidebar_uploads(sidebar_password)
+    sidebar_changes, sidebar_accessible = handle_sidebar_uploads(sidebar_password)
 
-    # Update variables based on sidebar changes
-    if sidebar_changes['uploaded_file'] == "remove":
-        uploaded_file = None
-        if os.path.exists("temp_bg.png"):
-            os.remove("temp_bg.png")
-    elif sidebar_changes['uploaded_file'] is not None:
-        uploaded_file = sidebar_changes['uploaded_file']
+    # Update variables based on sidebar changes only if sidebar is accessible
+    if sidebar_accessible:
+        if sidebar_changes['uploaded_file'] is not None:
+            st.session_state.uploaded_file = sidebar_changes['uploaded_file']
 
-    if sidebar_changes['excel_file'] == "remove":
-        excel_file = None
-        df = None
-        user_number_column = None
-        password_column = None
-        clue_column = None  # Add this line
-        image_column = None  # Add this line
-    elif sidebar_changes['excel_file'] is not None:
-        excel_file = sidebar_changes['excel_file']
-        df = sidebar_changes['df']
-        user_number_column = sidebar_changes['user_number_column']
-        password_column = sidebar_changes['password_column']
-        clue_column = sidebar_changes['clue_column']  # Add this line
-        image_column = sidebar_changes['image_column']  # Add this line
+        if sidebar_changes['excel_file'] is not None:
+            st.session_state.excel_file = sidebar_changes['excel_file']
+            df = sidebar_changes['df']
+            user_number_column = sidebar_changes['user_number_column']
+            password_column = sidebar_changes['password_column']
+            clue_column = sidebar_changes['clue_column']
+            image_column = sidebar_changes['image_column']
+
+        if sidebar_changes['image_zip'] is not None:
+            st.session_state.image_dict = extract_images_from_zip(sidebar_changes['image_zip'])
+
+    # Use the stored files
+    uploaded_file = st.session_state.uploaded_file
+    excel_file = st.session_state.excel_file
+    image_dict = st.session_state.image_dict
 
     # User authentication form
     st.markdown("<h1 style='text-align: center; font-weight: bold; font-size: 2.5em;'>KEY TO TREASURE </h1>", unsafe_allow_html=True)
@@ -203,7 +224,7 @@ else:
                 stored_password = str(user_row[password_column].values[0]).strip()
                 if stored_password == password:
                     clue = user_row[clue_column].values[0]
-                    image_path = user_row[image_column].values[0]
+                    image_filename = str(user_row[image_column].values[0]).strip()  # Strip whitespace
                     
                     # Display image and clue
                     st.markdown(f"""
@@ -219,16 +240,16 @@ else:
                     """, unsafe_allow_html=True)
                     
                     # Display image
-                    if image_path and os.path.exists(image_path):
+                    if image_filename in image_dict:
+                        image_data = image_dict[image_filename]
                         try:
-                            with open(image_path, "rb") as image_file:
-                                image_data = image_file.read()
                             image = Image.open(io.BytesIO(image_data))
                             st.image(image, use_column_width=True)
                         except Exception as e:
                             st.error(f"Error loading image: {e}")
                     else:
-                        st.warning("Image not found or invalid path.")
+                        st.warning(f"Image not found: {image_filename}")
+                        st.write("Available images:", list(image_dict.keys()))  # Debug info
                     
                     # Display clue text
                     st.markdown(f"""
