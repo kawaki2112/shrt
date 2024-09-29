@@ -100,28 +100,78 @@ def countdown_timer(duration):
     st.session_state.timer_count += 1
     if st.session_state.timer_count >= 5:
         st.session_state.eliminated = True
-        st.rerun()
+        return
     
     placeholder = st.empty()
+    
+    # Add JavaScript to disable mouse events, hide cursor, and disable inputs
+    st.markdown("""
+        <style>
+        .cursor-disabled {
+            cursor: none !important;
+            pointer-events: none !important;
+        }
+        .input-disabled {
+            pointer-events: none !important;
+            opacity: 0.5 !important;
+        }
+        </style>
+        <script>
+        function disableInteractions() {
+            document.body.classList.add('cursor-disabled');
+            document.querySelectorAll('input, button, .stTextInput, .stButton').forEach(el => {
+                el.classList.add('input-disabled');
+                if (el.tagName === 'BUTTON' || el.tagName === 'INPUT') {
+                    el.disabled = true;
+                }
+            });
+        }
+        function enableInteractions() {
+            document.body.classList.remove('cursor-disabled');
+            document.querySelectorAll('input, button, .stTextInput, .stButton').forEach(el => {
+                el.classList.remove('input-disabled');
+                if (el.tagName === 'BUTTON' || el.tagName === 'INPUT') {
+                    el.disabled = false;
+                }
+            });
+        }
+        </script>
+    """, unsafe_allow_html=True)
+    
+    # Disable interactions
+    st.markdown("<script>disableInteractions();</script>", unsafe_allow_html=True)
+    
     for remaining in range(duration, 0, -1):
         placeholder.markdown(f"""
             <div style="
                 position: fixed;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                background-color: rgba(255, 0, 0, 0.8);
-                padding: 20px;
-                border-radius: 10px;
-                text-align: center;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.5);
+                display: flex;
+                justify-content: center;
+                align-items: center;
                 z-index: 9999;
             ">
-                <h2 style="color: white; font-size: 2em;">Time Freeze</h2>
-                <p style="color: white; font-size: 1.5em;">Please wait {remaining} seconds</p>
-                <p style="color: white; font-size: 1.2em;">Attempts left: {5 - st.session_state.timer_count}</p>
+                <div style="
+                    background-color: rgba(255, 0, 0, 0.8);
+                    padding: 20px;
+                    border-radius: 10px;
+                    text-align: center;
+                ">
+                    <h2 style="color: white; font-size: 2em;">Time Freeze</h2>
+                    <p style="color: white; font-size: 1.5em;">Please wait {remaining} seconds</p>
+                    <p style="color: white; font-size: 1.2em;">Attempts left: {5 - st.session_state.timer_count}</p>
+                </div>
             </div>
         """, unsafe_allow_html=True)
         time.sleep(1)
+    
+    # Enable interactions
+    st.markdown("<script>enableInteractions();</script>", unsafe_allow_html=True)
+    
     placeholder.empty()
 
 # Add this function to display the elimination message
